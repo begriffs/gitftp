@@ -18,15 +18,21 @@ void git_or_die(int code)
 
 void cleanup(void)
 {
-	while (git_libgit2_shutdown() > 0)
-		;
+	/* probably doesn't matter, but… */
+	git_libgit2_shutdown();
+}
+
+int pr_node(const char *root, const git_tree_entry *entry, void *payload)
+{
+	(void)payload;
+	printf("%s%s\n", root, git_tree_entry_name(entry));
+	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	git_repository *repo;
 	git_object *obj;
-	git_tree *tree;
 
 	git_or_die( git_libgit2_init() );
 	atexit(cleanup);
@@ -39,9 +45,10 @@ int main(int argc, char **argv)
 	
 	git_or_die( git_repository_open(&repo, argv[1]) );
 	git_or_die( git_revparse_single(&obj, repo, "HEAD^{tree}") );
-	tree = (git_tree*)obj;
 
-	printf("Count: %zu\n", git_tree_entrycount(tree));
+	git_or_die(git_tree_walk(
+		(git_tree *)obj, GIT_TREEWALK_POST, pr_node, NULL
+	));
 
 	return EXIT_SUCCESS;
 }
