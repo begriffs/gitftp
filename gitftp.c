@@ -2,14 +2,24 @@
 #include <stdlib.h>
 
 #include <git2/errors.h>
+#include <git2/global.h>
 #include <git2/repository.h>
 #include <git2/revparse.h>
 #include <git2/tree.h>
 
-void diegit(void)
+void git_or_die(int code)
 {
-	fprintf(stderr, "%s\n", giterr_last()->message);
-	exit(EXIT_FAILURE);
+	if (code < 0)
+	{
+		fprintf(stderr, "%s\n", giterr_last()->message);
+		exit(EXIT_FAILURE);
+	}
+}
+
+void cleanup(void)
+{
+	while (git_libgit2_shutdown() > 0)
+		;
 }
 
 int main(int argc, char **argv)
@@ -18,16 +28,17 @@ int main(int argc, char **argv)
 	git_object *obj;
 	git_tree *tree;
 
+	git_or_die( git_libgit2_init() );
+	atexit(cleanup);
+
 	if (argc != 2)
 	{
 		fprintf(stderr, "Usage: %s repo-path\n", *argv);
 		return EXIT_FAILURE;
 	}
 	
-	if (git_repository_open(&repo, argv[1]) != 0)
-		diegit();
-	if (git_revparse_single(&obj, repo, "HEAD^{tree}") != 0)
-		diegit();
+	git_or_die( git_repository_open(&repo, argv[1]) );
+	git_or_die( git_revparse_single(&obj, repo, "HEAD^{tree}") );
 	tree = (git_tree*)obj;
 
 	printf("Count: %zu\n", git_tree_entrycount(tree));
