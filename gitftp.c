@@ -102,17 +102,19 @@ void serve(git_tree *tr)
 	while (1)
 	{
 		if ((c = accept(sock, &client, &clientsz)) < 0 ||
-		    (conn = fdopen(c, "w")) == NULL)
+		    (conn = fdopen(c, "r+")) == NULL)
 		{
 			perror("Failed accepting connection");
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
+		/* just a preference */
+		setvbuf(conn, NULL, _IOLBF, BUFSIZ);
 
 		pid = fork();
 		if (pid < 0)
 		{
-			fprintf(conn, "452 unable to fork (%s)", strerror(errno));
+			fprintf(conn, "452 unable to fork (%s)\n", strerror(errno));
 			fclose(conn);
 		}
 		else if (pid == 0)
