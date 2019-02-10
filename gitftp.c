@@ -82,27 +82,27 @@ int bind_or_die(char *svc)
 	return sock;
 }
 
-void ftp_session(FILE *in, FILE *out, git_tree *tr)
+void ftp_session(FILE *conn, git_tree *tr)
 {
 	char sha[8];
 	char *cmd = malloc(CLIENT_BUFSZ);
 	if (cmd == NULL)
 	{
-		fprintf(out, "452 Unable to allocate client command buffer\n");
+		fprintf(conn, "452 Unable to allocate client command buffer\n");
 		return;
 	}
-	fprintf(out, "220 SHA (%s)\n",
+	fprintf(conn, "220 SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
-	while (fgets(cmd, CLIENT_BUFSZ, in) != NULL)
+	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
-		fputs(cmd, out);
+		fputs(cmd, conn);
 	}
 }
 
 void serve(git_tree *tr)
 {
 	int sock, c;
-	FILE *conn_recv, *conn_send;
+	FILE *conn;
 	struct sockaddr client;
 	socklen_t clientsz = sizeof client;
 	pid_t pid;
@@ -120,32 +120,30 @@ void serve(git_tree *tr)
 	while (1)
 	{
 		if ((c = accept(sock, &client, &clientsz)) < 0
-		    || (conn_recv = fdopen(c, "r")) == NULL
-			|| (conn_send = fdopen(c, "w")) == NULL)
+		    || (conn = fdopen(c, "a+")) == NULL)
 		{
 			perror("Failed accepting connection");
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
 		/* just a preference */
-		if (setvbuf(conn_send, NULL, _IOLBF, BUFSIZ) != 0 ||
-		    setvbuf(conn_recv, NULL, _IOLBF, BUFSIZ) != 0)
+		if (setvbuf(conn, NULL, _IOLBF, BUFSIZ) != 0)
 			perror("Warning: unable to change socket buffering");
 
 		pid = fork();
 		if (pid < 0)
 		{
-			fprintf(conn_send, "452 unable to fork (%s)\n", strerror(errno));
-			fclose(conn_send);
+			fprintf(conn, "452 unable to fork (%s)\n", strerror(errno));
+			fclose(conn);
 		}
 		else if (pid == 0)
 		{
 			close(sock); /* belongs to parent */
-			ftp_session(conn_recv, conn_send, tr);
-			fclose(conn_send);
+			ftp_session(conn, tr);
+			fclose(conn);
 			exit(EXIT_SUCCESS);
 		}
-		fclose(conn_send); /* let child handle it */
+		fclose(conn); /* let child handle it */
 	}
 }
 
