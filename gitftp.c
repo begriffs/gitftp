@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,8 +15,11 @@
 #include <git2/revparse.h>
 #include <git2/tree.h>
 
-#define DEFAULT_PORT "8021"
+/* choosing a minimal backlog until experience
+ * proves that a longer one is advantageous */
 #define TCP_BACKLOG  0
+#define DEFAULT_PORT "8021"
+#define CLIENT_BUFSZ (10+PATH_MAX)
 
 void git_or_die(int code)
 {
@@ -78,17 +82,27 @@ int bind_or_die(char *svc)
 	return sock;
 }
 
-void ftp_session(FILE *conn, git_tree *tr)
+void ftp_session(FILE *in, FILE *out, git_tree *tr)
 {
 	char sha[8];
-	fprintf(conn, "220 SHA (%s)\n",
+	char *cmd = malloc(CLIENT_BUFSZ);
+	if (cmd == NULL)
+	{
+		fprintf(out, "452 Unable to allocate client command buffer\n");
+		return;
+	}
+	fprintf(out, "220 SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
+	while (fgets(cmd, CLIENT_BUFSZ, in) != NULL)
+	{
+		fputs(cmd, out);
+	}
 }
 
 void serve(git_tree *tr)
 {
 	int sock, c;
-	FILE *conn;
+	FILE *conn_recv, *conn_send;
 	struct sockaddr client;
 	socklen_t clientsz = sizeof client;
 	pid_t pid;
@@ -97,8 +111,6 @@ void serve(git_tree *tr)
 
 	sock = bind_or_die(DEFAULT_PORT);
 
-	/* choosing a minimal backlog until experience
-	 * proves that a longer one is advantageous */
 	if (listen(sock, TCP_BACKLOG) < 0)
 	{
 		perror(NULL);
@@ -107,30 +119,33 @@ void serve(git_tree *tr)
 
 	while (1)
 	{
-		if ((c = accept(sock, &client, &clientsz)) < 0 ||
-		    (conn = fdopen(c, "a+")) == NULL)
+		if ((c = accept(sock, &client, &clientsz)) < 0
+		    || (conn_recv = fdopen(c, "r")) == NULL
+			|| (conn_send = fdopen(c, "w")) == NULL)
 		{
 			perror("Failed accepting connection");
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
 		/* just a preference */
-		setvbuf(conn, NULL, _IOLBF, BUFSIZ);
+		if (setvbuf(conn_send, NULL, _IOLBF, BUFSIZ) != 0 ||
+		    setvbuf(conn_recv, NULL, _IOLBF, BUFSIZ) != 0)
+			perror("Warning: unable to change socket buffering");
 
 		pid = fork();
 		if (pid < 0)
 		{
-			fprintf(conn, "452 unable to fork (%s)\n", strerror(errno));
-			fclose(conn);
+			fprintf(conn_send, "452 unable to fork (%s)\n", strerror(errno));
+			fclose(conn_send);
 		}
 		else if (pid == 0)
 		{
 			close(sock); /* belongs to parent */
-			ftp_session(conn, tr);
-			fclose(conn);
+			ftp_session(conn_recv, conn_send, tr);
+			fclose(conn_send);
 			exit(EXIT_SUCCESS);
 		}
-		fclose(conn); /* let child handle it */
+		fclose(conn_send); /* let child handle it */
 	}
 }
 
