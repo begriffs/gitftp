@@ -78,6 +78,13 @@ int bind_or_die(char *svc)
 	return sock;
 }
 
+void ftp_session(FILE *conn, git_tree *tr)
+{
+	char sha[8];
+	fprintf(conn, "220 SHA (%s)\n",
+	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
+}
+
 void serve(git_tree *tr)
 {
 	int sock, c;
@@ -85,7 +92,6 @@ void serve(git_tree *tr)
 	struct sockaddr client;
 	socklen_t clientsz = sizeof client;
 	pid_t pid;
-	char sha[8];
 
 	(void)tr;
 
@@ -102,7 +108,7 @@ void serve(git_tree *tr)
 	while (1)
 	{
 		if ((c = accept(sock, &client, &clientsz)) < 0 ||
-		    (conn = fdopen(c, "r+")) == NULL)
+		    (conn = fdopen(c, "a+")) == NULL)
 		{
 			perror("Failed accepting connection");
 			close(sock);
@@ -120,17 +126,13 @@ void serve(git_tree *tr)
 		else if (pid == 0)
 		{
 			close(sock); /* belongs to parent */
-			fprintf(stderr, "Welcoming client\n");
-			fprintf(conn, "220 SHA (%s)\n",
-			        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
-
+			ftp_session(conn, tr);
 			fclose(conn);
 			exit(EXIT_SUCCESS);
 		}
 		fclose(conn); /* let child handle it */
 	}
 }
-
 
 int main(int argc, char **argv)
 {
