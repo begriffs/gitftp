@@ -1,5 +1,7 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -7,6 +9,7 @@
 
 #include <git2/errors.h>
 #include <git2/global.h>
+#include <git2/oid.h>
 #include <git2/repository.h>
 #include <git2/revparse.h>
 #include <git2/tree.h>
@@ -77,10 +80,16 @@ int bind_or_die(char *svc)
 
 void serve(git_tree *tr)
 {
-	int sock = bind_or_die(DEFAULT_PORT), conn;
+	int sock, c;
+	FILE *conn;
 	struct sockaddr client;
 	socklen_t clientsz = sizeof client;
+	pid_t pid;
+	char sha[8];
+
 	(void)tr;
+
+	sock = bind_or_die(DEFAULT_PORT);
 
 	/* choosing a minimal backlog until experience
 	 * proves that a longer one is advantageous */
@@ -92,16 +101,31 @@ void serve(git_tree *tr)
 
 	while (1)
 	{
-		if ((conn = accept(sock, &client, &clientsz)) < 0)
+		if ((c = accept(sock, &client, &clientsz)) < 0 ||
+		    (conn = fdopen(c, "w")) == NULL)
 		{
-			printf("! %i on %i\n", conn, sock);
-			/* perror("Failed accepting connection"); */
+			perror("Failed accepting connection");
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
-		printf("  %i on %i\n", conn, sock);
-		write(conn, "Bye\n", 4);
-		close(conn);
+
+		pid = fork();
+		if (pid < 0)
+		{
+			fprintf(conn, "452 unable to fork (%s)", strerror(errno));
+			fclose(conn);
+		}
+		else if (pid == 0)
+		{
+			close(sock); /* belongs to parent */
+			fprintf(stderr, "Welcoming client\n");
+			fprintf(conn, "220 SHA (%s)\n",
+			        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
+
+			fclose(conn);
+			exit(EXIT_SUCCESS);
+		}
+		fclose(conn); /* let child handle it */
 	}
 }
 
