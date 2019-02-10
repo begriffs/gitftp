@@ -49,60 +49,60 @@ int bind_or_die(char *svc)
 	hints.ai_flags    = AI_PASSIVE; /* have system provide IP */
 	hints.ai_protocol = 0;
 	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
-    {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
-        exit(EXIT_FAILURE);
-    }
+	{
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
+		exit(EXIT_FAILURE);
+	}
 
-    for (ap = addrs; ap != NULL; ap = ap->ai_next)
-    {
-        sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
-        if (sock < 0)
-            continue;
-        if (bind(sock, ap->ai_addr, ap->ai_addrlen) == 0)
-            break; /* noice */
-        perror("Failed to bind");
-        close(sock);
-    }
+	for (ap = addrs; ap != NULL; ap = ap->ai_next)
+	{
+		sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
+		if (sock < 0)
+			continue;
+		if (bind(sock, ap->ai_addr, ap->ai_addrlen) == 0)
+			break; /* noice */
+		perror("Failed to bind");
+		close(sock);
+	}
 
-    if (ap == NULL)
-    {
-        fprintf(stderr, "Could not bind\n");
-        exit(EXIT_FAILURE);
-    }
-    freeaddrinfo(addrs);
+	if (ap == NULL)
+	{
+		fprintf(stderr, "Could not bind\n");
+		exit(EXIT_FAILURE);
+	}
+	freeaddrinfo(addrs);
 
-    return sock;
+	return sock;
 }
 
 void serve(git_tree *tr)
 {
-    int sock = bind_or_die(DEFAULT_PORT), conn;
-    struct sockaddr client;
-    socklen_t clientsz = sizeof client;
-    (void)tr;
+	int sock = bind_or_die(DEFAULT_PORT), conn;
+	struct sockaddr client;
+	socklen_t clientsz = sizeof client;
+	(void)tr;
 
-    /* choosing a minimal backlog until experience
-     * proves that a longer one is advantageous */
+	/* choosing a minimal backlog until experience
+	 * proves that a longer one is advantageous */
 	if (listen(sock, TCP_BACKLOG) < 0)
-    {
-        perror(NULL);
-        exit(EXIT_FAILURE);
-    }
+	{
+		perror(NULL);
+		exit(EXIT_FAILURE);
+	}
 
-    while (1)
-    {
-        if ((conn = accept(sock, &client, &clientsz)) < 0)
-        {
-            printf("! %i on %i\n", conn, sock);
-            /* perror("Failed accepting connection"); */
-            close(sock);
-            exit(EXIT_FAILURE);
-        }
-        printf("  %i on %i\n", conn, sock);
-        write(conn, "Bye\n", 4);
-        close(conn);
-    }
+	while (1)
+	{
+		if ((conn = accept(sock, &client, &clientsz)) < 0)
+		{
+			printf("! %i on %i\n", conn, sock);
+			/* perror("Failed accepting connection"); */
+			close(sock);
+			exit(EXIT_FAILURE);
+		}
+		printf("  %i on %i\n", conn, sock);
+		write(conn, "Bye\n", 4);
+		close(conn);
+	}
 }
 
 
