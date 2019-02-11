@@ -91,11 +91,16 @@ void ftp_session(FILE *conn, git_tree *tr)
 		fprintf(conn, "452 Unable to allocate client command buffer\n");
 		return;
 	}
-	fprintf(conn, "220 SHA (%s)\n",
+	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
-		fputs(cmd, conn);
+		if (strncmp(cmd, "USER", 4) == 0)
+			fprintf(conn, "331 Username OK, supply any pass\n");
+		else if (strncmp(cmd, "PASS", 4) == 0)
+			fprintf(conn, "230 Logged in\n");
+		else
+			fprintf(conn, "502 Unimplemented\n");
 	}
 }
 
@@ -130,8 +135,7 @@ void serve(git_tree *tr)
 		if (setvbuf(conn, NULL, _IOLBF, BUFSIZ) != 0)
 			perror("Warning: unable to change socket buffering");
 
-		pid = fork();
-		if (pid < 0)
+		if ((pid = fork()) < 0)
 		{
 			fprintf(conn, "452 unable to fork (%s)\n", strerror(errno));
 			fclose(conn);
