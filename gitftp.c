@@ -82,6 +82,11 @@ int negotiate_bind(char *svc)
 		fprintf(stderr, "Could not bind\n");
 		return -1;
 	}
+	if (listen(sock, TCP_BACKLOG) < 0)
+	{
+		perror("listen()");
+		exit(EXIT_FAILURE);
+	}
 
 	return sock;
 }
@@ -111,7 +116,7 @@ void ftp_ls(FILE *conn, git_tree *tr)
 
 /* the weird IPv4/port encoding for passive mode
  *
- * returns 0 if desc is filled in properly, else -1
+ * returns 0 if desc is filled in properly, else 1
  */
 int describe_sock(int sock, char *desc)
 {
@@ -124,15 +129,13 @@ int describe_sock(int sock, char *desc)
  	if (getsockname(sock, &addr, &addr_len) != 0)
 	{
 		perror("getsockname");
-		return -1;
+		return 1;
 	}
-	/*
-	if (addr.sin_family != AF_INET)
+	if (addr.sa_family != AF_INET)
 	{
 		fputs("Passive socket is not of INET family\n", stderr);
 		return -1;
 	}
-	*/
 
 	sscanf(inet_ntoa(addr_in->sin_addr),
 	       "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
@@ -143,13 +146,38 @@ int describe_sock(int sock, char *desc)
 	return 0;
 }
 
+FILE *accept_stream(int sock, char *mode)
+{
+	int c;
+	FILE *ret;
+	struct sockaddr addr;
+	socklen_t sa_sz = sizeof addr;
+
+	if ((c = accept(sock, &addr, &sa_sz)) < 0)
+	{
+		perror("accept()");
+		return NULL;
+	}
+	if((ret = fdopen(c, mode)) == NULL)
+	{
+		perror("fdopen()");
+		return NULL;
+	}
+		
+	/* just a preference */
+	if (setvbuf(ret, NULL, _IOLBF, BUFSIZ) != 0)
+		perror("Warning: unable to change socket buffering");
+
+	return ret;
+}
+
 void ftp_session(FILE *conn, git_tree *tr)
 {
 	char sha[8];
 	char cmd[CLIENT_BUFSZ];
 
 	int pasvfd;
-	/* FILE *pasv_conn = NULL; */
+	FILE *pasv_conn = NULL;
 	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
@@ -170,7 +198,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 		else if (strncmp(cmd, "QUIT", 4) == 0)
 		{
 			fprintf(conn, "250 Bye\n");
-			return;
+			break;
 		}
 		else if (strncmp(cmd, "PASV", 4) == 0)
 		{
@@ -181,44 +209,42 @@ void ftp_session(FILE *conn, git_tree *tr)
 				fprintf(conn, "452 Passive mode port unavailable\n");
 				continue;
 			}
-			if (describe_sock(pasvfd, pasv_desc) < 0)
+			if (describe_sock(pasvfd, pasv_desc) != 0)
 			{
 				close(pasvfd);
 				fprintf(conn, "452 Passive socket incorrect\n");
 				continue;
 			}
 
+			if ((pasv_conn = accept_stream(pasvfd, "a+")) == NULL)
+			{
+				close(pasvfd);
+				fprintf(conn, "452 Failed to accept() pasv sock\n");
+				continue;
+			}
 			fprintf(conn, "227 Entering Passive Mode %s\n", pasv_desc);
 		}
 		else
 			fprintf(conn, "502 Unimplemented\n");
 	}
+	if (pasv_conn != NULL)
+		fclose(pasv_conn);
 }
 
 void serve(git_tree *tr)
 {
-	int sock, c;
+	int sock;
 	FILE *conn;
-	struct sockaddr client;
-	socklen_t clientsz = sizeof client;
 	pid_t pid;
 
 	(void)tr;
 
 	sock = bind_or_die(DEFAULT_PORT);
 
-	if (listen(sock, TCP_BACKLOG) < 0)
-	{
-		perror(NULL);
-		exit(EXIT_FAILURE);
-	}
-
 	while (1)
 	{
-		if ((c = accept(sock, &client, &clientsz)) < 0
-		    || (conn = fdopen(c, "a+")) == NULL)
+		if ((conn = accept_stream(sock, "a+")) == NULL)
 		{
-			perror("Failed accepting connection");
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
