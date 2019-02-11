@@ -5,8 +5,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <git2/errors.h>
 #include <git2/global.h>
@@ -45,20 +47,22 @@ int pr_node(const char *root, const git_tree_entry *entry, void *payload)
 
 /* adapted from
  * http://pubs.opengroup.org/onlinepubs/9699919799/functions/getaddrinfo.html
+ *
+ * Returns: socket file desciptor, or negative error value
  */
-int bind_or_die(char *svc)
+int negotiate_bind(char *svc)
 {
 	int sock, e;
 	struct addrinfo hints = {0}, *addrs, *ap;
 
-	hints.ai_family   = AF_UNSPEC;  /* IPv4 or IPv6 */
+	hints.ai_family   = AF_INET;  /* IPv4 required for PASV command */
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags    = AI_PASSIVE; /* have system provide IP */
+	hints.ai_flags    = AI_PASSIVE | AI_NUMERICSERV;
 	hints.ai_protocol = 0;
 	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
-		exit(EXIT_FAILURE);
+		return e;
 	}
 
 	for (ap = addrs; ap != NULL; ap = ap->ai_next)
@@ -71,34 +75,121 @@ int bind_or_die(char *svc)
 		perror("Failed to bind");
 		close(sock);
 	}
+	freeaddrinfo(addrs);
 
 	if (ap == NULL)
 	{
 		fprintf(stderr, "Could not bind\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
-	freeaddrinfo(addrs);
 
 	return sock;
+}
+
+int bind_or_die(char *svc)
+{
+	int sock = negotiate_bind(svc);
+	if (sock < 0)
+		exit(EXIT_FAILURE);
+	return sock;
+}
+
+void ftp_ls(FILE *conn, git_tree *tr)
+{
+	size_t i, n = git_tree_entrycount(tr);
+	const char *name;
+	git_tree_entry *entry;
+
+	for (i = 0; i < n; ++i)
+	{
+		 entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
+		 name = git_tree_entry_name(entry);
+		 fputs(name, conn);
+		 git_tree_entry_free(entry);
+	}
+}
+
+/* the weird IPv4/port encoding for passive mode
+ *
+ * returns 0 if desc is filled in properly, else -1
+ */
+int describe_sock(int sock, char *desc)
+{
+	struct sockaddr addr = {0};
+	struct sockaddr_in *addr_in = (struct sockaddr_in *)&addr;
+	socklen_t addr_len;
+	int ip[4];
+	div_t port;
+
+ 	if (getsockname(sock, &addr, &addr_len) != 0)
+	{
+		perror("getsockname");
+		return -1;
+	}
+	/*
+	if (addr.sin_family != AF_INET)
+	{
+		fputs("Passive socket is not of INET family\n", stderr);
+		return -1;
+	}
+	*/
+
+	sscanf(inet_ntoa(addr_in->sin_addr),
+	       "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+	port = div(addr_in->sin_port, 256);
+
+	sprintf(desc, "(%d,%d,%d,%d,%d,%d)",
+	        ip[0], ip[1], ip[2], ip[3], port.quot, port.rem);
+	return 0;
 }
 
 void ftp_session(FILE *conn, git_tree *tr)
 {
 	char sha[8];
-	char *cmd = malloc(CLIENT_BUFSZ);
-	if (cmd == NULL)
-	{
-		fprintf(conn, "452 Unable to allocate client command buffer\n");
-		return;
-	}
+	char cmd[CLIENT_BUFSZ];
+
+	int pasvfd;
+	/* FILE *pasv_conn = NULL; */
+	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
+
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
+		printf("<< %s", cmd);
 		if (strncmp(cmd, "USER", 4) == 0)
 			fprintf(conn, "331 Username OK, supply any pass\n");
 		else if (strncmp(cmd, "PASS", 4) == 0)
 			fprintf(conn, "230 Logged in\n");
+		else if (strncmp(cmd, "PWD", 3) == 0)
+			fprintf(conn, "257 /\n");
+		else if (strncmp(cmd, "NLST", 5) == 0)
+			ftp_ls(conn, tr);
+		else if (strncmp(cmd, "SYST", 4) == 0)
+			fprintf(conn, "215 GitFTP\n");
+		else if (strncmp(cmd, "QUIT", 4) == 0)
+		{
+			fprintf(conn, "250 Bye\n");
+			return;
+		}
+		else if (strncmp(cmd, "PASV", 4) == 0)
+		{
+			/* ask system for random port */
+			pasvfd = negotiate_bind("0");
+			if (pasvfd < 0)
+			{
+				fprintf(conn, "452 Passive mode port unavailable\n");
+				continue;
+			}
+			if (describe_sock(pasvfd, pasv_desc) < 0)
+			{
+				close(pasvfd);
+				fprintf(conn, "452 Passive socket incorrect\n");
+				continue;
+			}
+
+			fprintf(conn, "227 Entering Passive Mode %s\n", pasv_desc);
+		}
 		else
 			fprintf(conn, "502 Unimplemented\n");
 	}
