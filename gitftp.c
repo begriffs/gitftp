@@ -190,11 +190,15 @@ void ftp_session(FILE *conn, git_tree *tr)
 		else if (strncmp(cmd, "PASS", 4) == 0)
 			fprintf(conn, "230 Logged in\n");
 		else if (strncmp(cmd, "PWD", 3) == 0)
-			fprintf(conn, "257 /\n");
+			fprintf(conn, "257 \"/\"\n");
+		else if (strncmp(cmd, "CWD", 3) == 0)
+			fprintf(conn, "250 Smile and nod\n");
 		else if (strncmp(cmd, "NLST", 5) == 0)
 			ftp_ls(conn, tr);
 		else if (strncmp(cmd, "SYST", 4) == 0)
-			fprintf(conn, "215 GitFTP\n");
+			fprintf(conn, "215 gitftp\n");
+		else if (strncmp(cmd, "TYPE", 4) == 0)
+			fprintf(conn, "200 Sure whatever\n");
 		else if (strncmp(cmd, "QUIT", 4) == 0)
 		{
 			fprintf(conn, "250 Bye\n");
