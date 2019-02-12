@@ -89,7 +89,7 @@ int negotiate_listen(char *svc)
 	return sock;
 }
 
-int bind_or_die(char *svc)
+int listen_or_die(char *svc)
 {
 	int sock = negotiate_listen(svc);
 	if (sock < 0)
@@ -251,7 +251,7 @@ void serve(git_tree *tr)
 
 	(void)tr;
 
-	sock = bind_or_die(DEFAULT_PORT);
+	sock = listen_or_die(DEFAULT_PORT);
 
 	while (1)
 	{
