@@ -17,9 +17,7 @@
 #include <git2/revparse.h>
 #include <git2/tree.h>
 
-/* choosing a minimal backlog until experience
- * proves that a longer one is advantageous */
-#define TCP_BACKLOG  0
+#define TCP_BACKLOG  SOMAXCONN
 #define DEFAULT_PORT "8021"
 #define CLIENT_BUFSZ (10+PATH_MAX)
 
@@ -50,7 +48,7 @@ int pr_node(const char *root, const git_tree_entry *entry, void *payload)
  *
  * Returns: socket file desciptor, or negative error value
  */
-int negotiate_bind(char *svc)
+int negotiate_listen(char *svc)
 {
 	int sock, e;
 	struct addrinfo hints = {0}, *addrs, *ap;
@@ -62,7 +60,7 @@ int negotiate_bind(char *svc)
 	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
-		return e;
+		return -1;
 	}
 
 	for (ap = addrs; ap != NULL; ap = ap->ai_next)
@@ -93,7 +91,7 @@ int negotiate_bind(char *svc)
 
 int bind_or_die(char *svc)
 {
-	int sock = negotiate_bind(svc);
+	int sock = negotiate_listen(svc);
 	if (sock < 0)
 		exit(EXIT_FAILURE);
 	return sock;
@@ -176,7 +174,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 	char sha[8];
 	char cmd[CLIENT_BUFSZ];
 
-	int pasvfd;
+	int pasvfd = -1;
 	FILE *pasv_conn = NULL;
 	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
 
@@ -193,8 +191,23 @@ void ftp_session(FILE *conn, git_tree *tr)
 			fprintf(conn, "257 \"/\"\n");
 		else if (strncmp(cmd, "CWD", 3) == 0)
 			fprintf(conn, "250 Smile and nod\n");
-		else if (strncmp(cmd, "NLST", 5) == 0)
-			ftp_ls(conn, tr);
+		else if (strncmp(cmd, "LST", 5) == 0)
+		{
+			if (pasvfd < 0)
+			{
+				fprintf(conn, "425 Use PASV first\n");
+				continue;
+			}
+
+			if ((pasv_conn = accept_stream(pasvfd, "a+")) == NULL)
+			{
+				fprintf(conn, "452 Failed to accept() pasv sock\n");
+				continue;
+			}
+			ftp_ls(pasv_conn, tr);
+			fclose(pasv_conn);
+			pasvfd = -1;
+		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
 			fprintf(conn, "215 gitftp\n");
 		else if (strncmp(cmd, "TYPE", 4) == 0)
@@ -207,7 +220,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 		else if (strncmp(cmd, "PASV", 4) == 0)
 		{
 			/* ask system for random port */
-			pasvfd = negotiate_bind("0");
+			pasvfd = negotiate_listen("0");
 			if (pasvfd < 0)
 			{
 				fprintf(conn, "452 Passive mode port unavailable\n");
@@ -216,16 +229,11 @@ void ftp_session(FILE *conn, git_tree *tr)
 			if (describe_sock(pasvfd, pasv_desc) != 0)
 			{
 				close(pasvfd);
+				pasvfd = -1;
 				fprintf(conn, "452 Passive socket incorrect\n");
 				continue;
 			}
 
-			if ((pasv_conn = accept_stream(pasvfd, "a+")) == NULL)
-			{
-				close(pasvfd);
-				fprintf(conn, "452 Failed to accept() pasv sock\n");
-				continue;
-			}
 			fprintf(conn, "227 Entering Passive Mode %s\n", pasv_desc);
 		}
 		else
