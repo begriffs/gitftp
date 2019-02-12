@@ -249,8 +249,6 @@ void serve(git_tree *tr)
 	FILE *conn;
 	pid_t pid;
 
-	(void)tr;
-
 	sock = listen_or_die(DEFAULT_PORT);
 
 	while (1)
