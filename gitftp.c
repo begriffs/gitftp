@@ -124,26 +124,27 @@ void ftp_ls(FILE *conn, git_tree *tr)
  */
 int describe_sock(int sock, char *desc)
 {
-	struct sockaddr addr = {0};
-	struct sockaddr_in *addr_in = (struct sockaddr_in *)&addr;
-	socklen_t addr_len;
+	struct sockaddr_in addr = {0};
+	socklen_t addr_len = sizeof addr;
 	int ip[4];
 	div_t port;
 
- 	if (getsockname(sock, &addr, &addr_len) != 0)
+	if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) != 0)
 	{
 		perror("getsockname");
-		return 1;
+		return -1;
 	}
-	if (addr.sa_family != AF_INET)
+	if (addr.sin_family != AF_INET)
 	{
-		fputs("Passive socket is not of INET family\n", stderr);
+		fprintf(stderr,
+		        "Passive socket is in family %d, not INET (%d)\n",
+		        addr.sin_family, AF_INET);
 		return -1;
 	}
 
-	sscanf(inet_ntoa(addr_in->sin_addr),
+	sscanf(inet_ntoa(addr.sin_addr),
 	       "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
-	port = div(addr_in->sin_port, 256);
+	port = div(addr.sin_port, 256);
 
 	sprintf(desc, "(%d,%d,%d,%d,%d,%d)",
 	        ip[0], ip[1], ip[2], ip[3], port.quot, port.rem);
