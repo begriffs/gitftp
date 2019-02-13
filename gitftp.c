@@ -216,7 +216,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 			pasvfd = -1;
 		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
-			fprintf(conn, "215 gitftp\n");
+			fprintf(conn, "215 git\n");
 		else if (strncmp(cmd, "TYPE", 4) == 0)
 			fprintf(conn, "200 Sure whatever\n");
 		else if (strncmp(cmd, "QUIT", 4) == 0)
@@ -240,6 +240,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 				fprintf(conn, "452 Passive socket incorrect\n");
 				continue;
 			}
+			printf("Opening passive socket on %s\n", pasv_desc);
 
 			fprintf(conn, "227 Entering Passive Mode %s\n", pasv_desc);
 		}
