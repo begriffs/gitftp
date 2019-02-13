@@ -52,7 +52,7 @@ int pr_node(const char *root, const git_tree_entry *entry, void *payload)
  */
 int negotiate_listen(char *svc)
 {
-	int sock, e;
+	int sock, e, reuseaddr=1;
 	struct addrinfo hints = {0}, *addrs, *ap;
 
 	hints.ai_family   = AF_INET;  /* IPv4 required for PASV command */
@@ -70,6 +70,9 @@ int negotiate_listen(char *svc)
 		sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
 		if (sock < 0)
 			continue;
+		if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+		               &reuseaddr,sizeof(reuseaddr)) < 0)
+			perror("setsockopt(REUSEADDR)");
 		if (bind(sock, ap->ai_addr, ap->ai_addrlen) == 0)
 			break; /* noice */
 		perror("Failed to bind");
