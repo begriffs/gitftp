@@ -46,6 +46,8 @@ int pr_node(const char *root, const git_tree_entry *entry, void *payload)
 /* adapted from
  * http://pubs.opengroup.org/onlinepubs/9699919799/functions/getaddrinfo.html
  *
+ * svc: either a name like "ftp" or a port number as string
+ *
  * Returns: socket file desciptor, or negative error value
  */
 int negotiate_listen(char *svc)
@@ -55,7 +57,7 @@ int negotiate_listen(char *svc)
 
 	hints.ai_family   = AF_INET;  /* IPv4 required for PASV command */
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags    = AI_PASSIVE | AI_NUMERICSERV;
+	hints.ai_flags    = AI_PASSIVE;
 	hints.ai_protocol = 0;
 	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
 	{
@@ -83,7 +85,8 @@ int negotiate_listen(char *svc)
 	if (listen(sock, TCP_BACKLOG) < 0)
 	{
 		perror("listen()");
-		exit(EXIT_FAILURE);
+		close(sock);
+		return -1;
 	}
 
 	return sock;
