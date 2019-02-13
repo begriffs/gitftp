@@ -198,7 +198,7 @@ void ftp_session(FILE *conn, git_tree *tr)
 			fprintf(conn, "257 \"/\"\n");
 		else if (strncmp(cmd, "CWD", 3) == 0)
 			fprintf(conn, "250 Smile and nod\n");
-		else if (strncmp(cmd, "LST", 5) == 0)
+		else if (strncmp(cmd, "LST", 3) == 0)
 		{
 			if (pasvfd < 0)
 			{
