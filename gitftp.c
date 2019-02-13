@@ -58,7 +58,7 @@ int negotiate_listen(char *svc)
 	hints.ai_family   = AF_INET;  /* IPv4 required for PASV command */
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags    = AI_PASSIVE;
-	hints.ai_protocol = 0;
+	hints.ai_protocol = IPPROTO_TCP;
 	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
