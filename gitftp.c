@@ -151,7 +151,7 @@ int describe_sock(int sock, char *desc)
 	port = div(addr.sin_port, 256);
 
 	sprintf(desc, "(%d,%d,%d,%d,%d,%d)",
-	        ip[0], ip[1], ip[2], ip[3], port.quot, port.rem);
+	        ip[0], ip[1], ip[2], ip[3], port.rem, port.quot);
 	return 0;
 }
 
