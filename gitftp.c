@@ -109,8 +109,6 @@ void ftp_ls(FILE *conn, git_tree *tr)
 	const char *name;
 	git_tree_entry *entry;
 
-	fputs("150 the listing\n", conn);
-
 	for (i = 0; i < n; ++i)
 	{
 		 entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
@@ -119,7 +117,8 @@ void ftp_ls(FILE *conn, git_tree *tr)
 		 git_tree_entry_free(entry);
 	}
 
-	fputs("226 Directory finished\n", conn);
+	fputs("file1.txt\n", conn);
+	fputs("file2.txt\n", conn);
 }
 
 /* the weird IPv4/port encoding for passive mode
@@ -216,10 +215,11 @@ void ftp_session(FILE *conn, git_tree *tr)
 				fprintf(conn, "452 Failed to accept() pasv sock\n");
 				continue;
 			}
-			puts("Accepted, sending listing");
+			fprintf(conn, "150 Opening ASCII mode data connection for file list\n");
 			ftp_ls(pasv_conn, tr);
 			fclose(pasv_conn);
 			pasvfd = -1;
+			fprintf(conn, "226 Directory finished\n");
 		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
 			fprintf(conn, "215 git\n");
