@@ -21,11 +21,11 @@
 #define DEFAULT_PORT "8021"
 #define CLIENT_BUFSZ (10+PATH_MAX)
 
-void git_or_die(int code)
+void git_or_die(FILE *conn, int code)
 {
 	if (code < 0)
 	{
-		fprintf(stderr, "%s\n", giterr_last()->message);
+		fprintf(conn, "451 libgit2 error: %s\n", giterr_last()->message);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -179,7 +179,7 @@ FILE *accept_stream(int sock, char *mode)
 	return ret;
 }
 
-void ftp_session(FILE *conn, git_tree *tr)
+void ftp_session(FILE *conn, char *gitpath)
 {
 	char sha[8];
 	char cmd[CLIENT_BUFSZ];
@@ -187,6 +187,14 @@ void ftp_session(FILE *conn, git_tree *tr)
 	int pasvfd = -1;
 	FILE *pasv_conn = NULL;
 	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
+
+	git_repository *repo;
+	git_object *obj;
+	git_tree *tr;
+
+	git_or_die(conn, git_repository_open(&repo, gitpath) );
+	git_or_die(conn, git_revparse_single((git_object **)&obj, repo, "HEAD^{tree}") );
+	tr = (git_tree *)obj;
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
@@ -257,11 +265,17 @@ void ftp_session(FILE *conn, git_tree *tr)
 		fclose(pasv_conn);
 }
 
-void serve(git_tree *tr)
+int main(int argc, char **argv)
 {
 	int sock;
 	FILE *conn;
 	pid_t pid;
+
+	if (argc != 2)
+	{
+		fprintf(stderr, "Usage: %s repo-path\n", *argv);
+		return EXIT_FAILURE;
+	}
 
 	sock = listen_or_die(DEFAULT_PORT);
 
@@ -284,32 +298,16 @@ void serve(git_tree *tr)
 		else if (pid == 0)
 		{
 			close(sock); /* belongs to parent */
-			ftp_session(conn, tr);
+
+			git_or_die(conn, git_libgit2_init());
+			atexit(cleanup);
+
+			ftp_session(conn, argv[1]);
 			fclose(conn);
 			exit(EXIT_SUCCESS);
 		}
 		fclose(conn); /* let child handle it */
 	}
-}
-
-int main(int argc, char **argv)
-{
-	git_repository *repo;
-	git_object *obj;
-
-	if (argc != 2)
-	{
-		fprintf(stderr, "Usage: %s repo-path\n", *argv);
-		return EXIT_FAILURE;
-	}
-
-	git_or_die( git_libgit2_init() );
-	atexit(cleanup);
-
-	git_or_die( git_repository_open(&repo, argv[1]) );
-	git_or_die( git_revparse_single(&obj, repo, "HEAD^{tree}") );
-
-	serve((git_tree *)repo);
 
 	return EXIT_SUCCESS;
 }
