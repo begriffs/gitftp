@@ -17,7 +17,7 @@
  *
  * Returns: socket file desciptor, or negative error value
  */
-int negotiate_listen(char *svc)
+int negotiate_listen(const char *svc)
 {
 	int sock, e, reuseaddr=1;
 	struct addrinfo hints = {0}, *addrs, *ap;
@@ -62,7 +62,7 @@ int negotiate_listen(char *svc)
 	return sock;
 }
 
-int get_ip(int sock, int *ip)
+int get_ip_port(int sock, int *ip, int *port)
 {
 	struct sockaddr_in addr = {0};
 	socklen_t addr_len = sizeof addr;
@@ -74,42 +74,26 @@ int get_ip(int sock, int *ip)
 		perror("getsockname");
 		return -1;
 	}
-	dotted = inet_ntoa(addr.sin_addr);
-	matched = sscanf(dotted, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
-	if (matched < 4)
+	if (ip != NULL)
 	{
-		fprintf(stderr, "Unable to parse IPv4 in %s\n", dotted);
-		return -1;
+		dotted = inet_ntoa(addr.sin_addr);
+		matched = sscanf(dotted, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+		if (matched < 4)
+		{
+			fprintf(stderr, "Unable to parse IPv4 in %s\n", dotted);
+			return -1;
+		}
 	}
+	if (port != NULL)
+		*port = addr.sin_port;
 	return 0;
 }
 
-int get_port(int sock)
+FILE *sock_stream(int sock, const char *mode)
 {
-	struct sockaddr_in addr = {0};
-	socklen_t addr_len = sizeof addr;
-
-	if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) != 0)
-	{
-		perror("getsockname");
-		return -1;
-	}
-	return addr.sin_port;
-}
-
-FILE *accept_stream(int sock, char *mode)
-{
-	int c;
 	FILE *ret;
-	struct sockaddr addr;
-	socklen_t sa_sz = sizeof addr;
 
-	if ((c = accept(sock, &addr, &sa_sz)) < 0)
-	{
-		perror("accept()");
-		return NULL;
-	}
-	if((ret = fdopen(c, mode)) == NULL)
+	if((ret = fdopen(sock, mode)) == NULL)
 	{
 		perror("fdopen()");
 		return NULL;

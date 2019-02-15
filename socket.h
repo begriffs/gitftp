@@ -1,12 +1,10 @@
-#ifndef SOCKET_H
-#define SOCKET_H
+#ifndef GITFTP_SOCKET_H
+#define GITFTP_SOCKET_H
 
 #include <stdio.h>
 
-int negotiate_listen(char *svc);
-int listen_or_die(char *svc);
-int get_ip(int sock, int *ip);
-int get_port(int sock);
-FILE *accept_stream(int sock, char *mode);
+int negotiate_listen(const char *svc);
+int get_ip_port(int sock, int *ip, int *port);
+FILE *sock_stream(int sock, const char *mode);
 
 #endif
