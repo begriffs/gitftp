@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 
 #include <git2/errors.h>
 #include <git2/global.h>
@@ -17,7 +18,8 @@
 #include <git2/revparse.h>
 #include <git2/tree.h>
 
-#define TCP_BACKLOG  SOMAXCONN
+#include "socket.h"
+
 #define DEFAULT_PORT "8021"
 #define CLIENT_BUFSZ (10+PATH_MAX)
 
@@ -30,77 +32,45 @@ void git_or_die(FILE *conn, int code)
 	}
 }
 
-void cleanup(void)
-{
-	/* probably doesn't matter, but… */
-	git_libgit2_shutdown();
-}
-
-int pr_node(const char *root, const git_tree_entry *entry, void *payload)
-{
-	(void)payload;
-	printf("%s%s\n", root, git_tree_entry_name(entry));
-	return 0;
-}
-
-/* adapted from
- * http://pubs.opengroup.org/onlinepubs/9699919799/functions/getaddrinfo.html
- *
- * svc: either a name like "ftp" or a port number as string
- *
- * Returns: socket file desciptor, or negative error value
- */
-int negotiate_listen(char *svc)
-{
-	int sock, e, reuseaddr=1;
-	struct addrinfo hints = {0}, *addrs, *ap;
-
-	hints.ai_family   = AF_INET;  /* IPv4 required for PASV command */
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags    = AI_PASSIVE;
-	hints.ai_protocol = IPPROTO_TCP;
-	if ((e = getaddrinfo(NULL, svc, &hints, &addrs)) != 0)
-	{
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(e));
-		return -1;
-	}
-
-	for (ap = addrs; ap != NULL; ap = ap->ai_next)
-	{
-		sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
-		if (sock < 0)
-			continue;
-		if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-		               &reuseaddr,sizeof(reuseaddr)) < 0)
-			perror("setsockopt(REUSEADDR)");
-		if (bind(sock, ap->ai_addr, ap->ai_addrlen) == 0)
-			break; /* noice */
-		perror("Failed to bind");
-		close(sock);
-	}
-	freeaddrinfo(addrs);
-
-	if (ap == NULL)
-	{
-		fprintf(stderr, "Could not bind\n");
-		return -1;
-	}
-	if (listen(sock, TCP_BACKLOG) < 0)
-	{
-		perror("listen()");
-		close(sock);
-		return -1;
-	}
-
-	return sock;
-}
-
 int listen_or_die(char *svc)
 {
 	int sock = negotiate_listen(svc);
 	if (sock < 0)
 		exit(EXIT_FAILURE);
 	return sock;
+}
+
+
+/* wrapper to match expected atexit type */
+void cleanup_git(void)
+{
+	git_libgit2_shutdown();
+}
+
+struct pid_list
+{
+	pid_t pid;
+	struct pid_list *next;
+};
+struct pid_list *g_kids = NULL;
+
+/* wait to prevent zombies */
+void wait_for_kids(void)
+{
+	int status;
+	struct pid_list *k;
+
+	for (k = g_kids; k; k = k->next)
+		waitpid(k->pid, &status, 0);
+}
+
+void add_waitlist(pid_t k)
+{
+	struct pid_list *head = malloc(sizeof(struct pid_list));
+
+	head->pid = k;
+	head->next = g_kids;
+	g_kids = head;
 }
 
 void ftp_ls(FILE *conn, git_tree *tr)
@@ -121,65 +91,16 @@ void ftp_ls(FILE *conn, git_tree *tr)
 	fputs("file2.txt\n", conn);
 }
 
-/* the weird IPv4/port encoding for passive mode
- *
- * returns 0 if desc is filled in properly, else 1
- */
-int describe_sock(int sock, char *desc)
+void pasv_format(int *ip, int port, char *out)
 {
-	struct sockaddr_in addr = {0};
-	socklen_t addr_len = sizeof addr;
-	int ip[4];
-	div_t port;
+	div_t p = div(port, 256);
 
-	if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) != 0)
-	{
-		perror("getsockname");
-		return -1;
-	}
-	if (addr.sin_family != AF_INET)
-	{
-		fprintf(stderr,
-		        "Passive socket is in family %d, not INET (%d)\n",
-		        addr.sin_family, AF_INET);
-		return -1;
-	}
-
-	sscanf(inet_ntoa(addr.sin_addr),
-	       "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
-	port = div(addr.sin_port, 256);
-
-	sprintf(desc, "(%d,%d,%d,%d,%d,%d)",
-	        ip[0], ip[1], ip[2], ip[3], port.rem, port.quot);
-	return 0;
+	sprintf(out, "(%d,%d,%d,%d,%d,%d)",
+			ip[0], ip[1], ip[2], ip[3],
+			p.rem, p.quot);
 }
 
-FILE *accept_stream(int sock, char *mode)
-{
-	int c;
-	FILE *ret;
-	struct sockaddr addr;
-	socklen_t sa_sz = sizeof addr;
-
-	if ((c = accept(sock, &addr, &sa_sz)) < 0)
-	{
-		perror("accept()");
-		return NULL;
-	}
-	if((ret = fdopen(c, mode)) == NULL)
-	{
-		perror("fdopen()");
-		return NULL;
-	}
-		
-	/* just a preference */
-	if (setvbuf(ret, NULL, _IOLBF, BUFSIZ) != 0)
-		perror("Warning: unable to change socket buffering");
-
-	return ret;
-}
-
-void ftp_session(FILE *conn, char *gitpath)
+void ftp_session(FILE *conn, int ip[4], char *gitpath)
 {
 	char sha[8];
 	char cmd[CLIENT_BUFSZ];
@@ -247,7 +168,7 @@ void ftp_session(FILE *conn, char *gitpath)
 				fprintf(conn, "452 Passive mode port unavailable\n");
 				continue;
 			}
-			if (describe_sock(pasvfd, pasv_desc) != 0)
+			if (describe_sock(pasvfd, ip, pasv_desc) != 0)
 			{
 				close(pasvfd);
 				pasvfd = -1;
@@ -271,6 +192,10 @@ int main(int argc, char **argv)
 	FILE *conn;
 	pid_t pid;
 
+	int ip[4];
+	struct sockaddr_in addr = {0};
+	socklen_t addr_len = sizeof addr;
+
 	if (argc != 2)
 	{
 		fprintf(stderr, "Usage: %s repo-path\n", *argv);
@@ -279,6 +204,8 @@ int main(int argc, char **argv)
 
 	sock = listen_or_die(DEFAULT_PORT);
 
+	atexit(wait_for_kids);
+
 	while (1)
 	{
 		if ((conn = accept_stream(sock, "a+")) == NULL)
@@ -286,6 +213,14 @@ int main(int argc, char **argv)
 			close(sock);
 			exit(EXIT_FAILURE);
 		}
+		if (getsockname(sock, (struct sockaddr*)&addr, &addr_len) != 0)
+		{
+			perror("getsockname");
+			exit(EXIT_FAILURE);
+		}
+		sscanf(inet_ntoa(addr.sin_addr),
+			   "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+
 		/* just a preference */
 		if (setvbuf(conn, NULL, _IOLBF, BUFSIZ) != 0)
 			perror("Warning: unable to change socket buffering");
@@ -300,12 +235,13 @@ int main(int argc, char **argv)
 			close(sock); /* belongs to parent */
 
 			git_or_die(conn, git_libgit2_init());
-			atexit(cleanup);
+			atexit(cleanup_git);
 
-			ftp_session(conn, argv[1]);
+			ftp_session(conn, ip, argv[1]);
 			fclose(conn);
 			exit(EXIT_SUCCESS);
 		}
+		add_waitlist(pid);
 		fclose(conn); /* let child handle it */
 	}
 
