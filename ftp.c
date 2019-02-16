@@ -4,11 +4,13 @@
 #include <unistd.h>
 
 #include <git2/blob.h>
+#include <git2/commit.h>
 #include <git2/errors.h>
 #include <git2/global.h>
 #include <git2/oid.h>
 #include <git2/repository.h>
 #include <git2/revparse.h>
+#include <git2/revwalk.h>
 #include <git2/tree.h>
 
 #include <sys/socket.h>
@@ -34,25 +36,50 @@ void cleanup_git(void)
 
 void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 {
-	size_t i, n = git_tree_entrycount(tr);
 	const char *name;
-	git_filemode_t mode;
 	git_tree_entry *entry;
 	git_blob *blob;
-	git_off_t size;
+	git_tree *past_tr;
+	git_commit *commit;
+	git_revwalk *w;
 
-	for (i = 0; i < n; ++i)
+	git_filemode_t mode;
+	git_time_t time;
+	git_off_t size;
+	git_oid commit_oid;
+	const git_oid *entry_oid;
+	size_t i;
+	
+	git_revwalk_new(&w, repo);
+
+	for (i = 0; i < git_tree_entrycount(tr); ++i)
 	{
 		entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
+		entry_oid = git_tree_entry_id(entry);
+
 		name = git_tree_entry_name(entry);
 		mode = git_tree_entry_filemode(entry);
 
-		/* TODO: check for non-0 error code */
-		git_blob_lookup(&blob, repo, git_tree_entry_id(entry));
+		git_blob_lookup(&blob, repo, entry_oid);
 		size = git_blob_rawsize(blob);
 
+		git_revwalk_reset(w);
+		while (!git_revwalk_next(&commit_oid, w)) {
+			git_commit_lookup(&commit, repo, &commit_oid);
+			git_commit_tree(&past_tr, commit);
 
-		fprintf(conn, "%lld %s\n", size, name);
+			if (git_tree_entry_byid(past_tr, entry_oid) != NULL)
+				time = git_commit_time(commit);
+			else
+				break;
+		}
+
+		/* To retrieve tree for directory
+		 * git_tree_lookup(&tree, repo, git_tree_entry_id(tree_entry))
+		 */
+
+		fprintf(conn, "-r--r--r--    1  git       git      %6lld Feb 29  2018 %s\n",
+				size, name);
 	}
 }
 
