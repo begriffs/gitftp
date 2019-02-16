@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <git2/blob.h>
 #include <git2/errors.h>
 #include <git2/global.h>
 #include <git2/oid.h>
@@ -31,17 +32,27 @@ void cleanup_git(void)
 	git_libgit2_shutdown();
 }
 
-void ftp_ls(FILE *conn, git_tree *tr)
+void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 {
 	size_t i, n = git_tree_entrycount(tr);
 	const char *name;
+	git_filemode_t mode;
 	git_tree_entry *entry;
+	git_blob *blob;
+	git_off_t size;
 
 	for (i = 0; i < n; ++i)
 	{
-		 entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
-		 name = git_tree_entry_name(entry);
-		 fprintf(conn, "%s\n", name);
+		entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
+		name = git_tree_entry_name(entry);
+		mode = git_tree_entry_filemode(entry);
+
+		/* TODO: check for non-0 error code */
+		git_blob_lookup(&blob, repo, git_tree_entry_id(entry));
+		size = git_blob_rawsize(blob);
+
+
+		fprintf(conn, "%lld %s\n", size, name);
 	}
 }
 
@@ -74,7 +85,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	atexit(cleanup_git);
 
 	git_or_die(conn, git_repository_open(&repo, gitpath) );
-	git_or_die(conn, git_revparse_single((git_object **)&obj, repo, "HEAD^{tree}") );
+	git_or_die(conn, git_revparse_single((git_object **)&obj, repo, "master^{tree}") );
 	tr = (git_tree *)obj;
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
@@ -105,10 +116,10 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				continue;
 			}
 			fprintf(conn, "150 Opening ASCII mode data connection for file list\n");
-			ftp_ls(pasv_conn, tr);
+			ftp_ls(pasv_conn, repo, tr);
 			fclose(pasv_conn);
 			pasvfd = -1;
-			fprintf(conn, "226 Directory finished\n");
+			fprintf(conn, "226 Transfer complete\n");
 		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
 			fprintf(conn, "215 git\n");
