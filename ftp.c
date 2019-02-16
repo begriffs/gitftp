@@ -42,11 +42,7 @@ void ftp_ls(FILE *conn, git_tree *tr)
 		 entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
 		 name = git_tree_entry_name(entry);
 		 fprintf(conn, "%s\n", name);
-		 git_tree_entry_free(entry);
 	}
-
-	fputs("file1.txt\n", conn);
-	fputs("file2.txt\n", conn);
 }
 
 void pasv_format(const int *ip, int port, char *out)
@@ -147,7 +143,8 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 		else
 			fprintf(conn, "502 Unimplemented\n");
 	}
+	fputs("Client disconnected\n", stderr);
 	if (pasv_conn != NULL)
 		fclose(pasv_conn);
+	git_tree_free(tr);
 }
-
