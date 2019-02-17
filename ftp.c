@@ -77,7 +77,9 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 			git_blob_lookup(&blob, repo, entry_oid);
 			size = git_blob_rawsize(blob);
 
-			fprintf(conn, "-r--r--r--    1  git    git %6lld %s %s\n",
+			fprintf(conn, "%s    1  git    git %6lld %s %s\n",
+					(mode == GIT_FILEMODE_BLOB_EXECUTABLE)
+					? "-rwxr-xr-x" : "-rw-r--r--",
 					size, timestr, name);
 		}
 	}
