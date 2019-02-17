@@ -52,6 +52,9 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 	git_oid commit_oid;
 	const git_oid *entry_oid;
 	size_t i;
+
+	time_t now = time(NULL);
+	int cur_year = localtime(&now)->tm_year;
 	
 	git_revwalk_new(&w, repo);
 
@@ -78,13 +81,16 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 				break;
 		}
 		tm = localtime((time_t*)&epoch);
-		strftime(timestr, sizeof(timestr), "%b %e %H:%M", tm);
+		strftime(timestr, sizeof(timestr), 
+			(tm->tm_year == cur_year)
+			? "%b %e %H:%M"
+			: "%b %e  %Y"
+			, tm);
 
 		/* To retrieve tree for directory
 		 * git_tree_lookup(&tree, repo, git_tree_entry_id(tree_entry))
 		 */
-
-		fprintf(conn, "-r--r--r--    1  git       git      %6lld %s %s\n",
+		fprintf(conn, "-r--r--r--    1  git    git %6lld %s %s\n",
 				size, timestr, name);
 	}
 	git_revwalk_free(w);
