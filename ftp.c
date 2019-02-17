@@ -40,7 +40,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 	const char *name;
 	git_tree_entry *entry;
 	git_blob *blob;
-	git_tree *past_tr;
+	git_tree *past_tr, *sub_tr;
 	git_commit *commit;
 	git_revwalk *w;
 
@@ -66,32 +66,38 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 		name = git_tree_entry_name(entry);
 		mode = git_tree_entry_filemode(entry);
 
-		git_blob_lookup(&blob, repo, entry_oid);
-		size = git_blob_rawsize(blob);
+		if (git_tree_entry_type(entry) == GIT_OBJ_TREE) {
+			git_tree_lookup(&sub_tr, repo, entry_oid);
 
-		git_revwalk_reset(w);
-		git_revwalk_push_head(w);
-		while (!git_revwalk_next(&commit_oid, w)) {
-			git_commit_lookup(&commit, repo, &commit_oid);
-			git_commit_tree(&past_tr, commit);
+			fprintf(conn,
+					"drwxr-xr-x   %2zu  git    git      0 %s %s\n",
+					git_tree_entrycount(sub_tr), "Jan 01 08:08", name);
+		} else {
+			git_blob_lookup(&blob, repo, entry_oid);
+			size = git_blob_rawsize(blob);
 
-			if (git_tree_entry_byid(past_tr, entry_oid) != NULL)
-				epoch = git_commit_time(commit);
-			else
-				break;
+			git_revwalk_reset(w);
+			git_revwalk_simplify_first_parent(w);
+			git_revwalk_push_head(w);
+			while (!git_revwalk_next(&commit_oid, w)) {
+				git_commit_lookup(&commit, repo, &commit_oid);
+				git_commit_tree(&past_tr, commit);
+
+				if (git_tree_entry_byid(past_tr, entry_oid) != NULL)
+					epoch = git_commit_time(commit);
+				else
+					break;
+			}
+			tm = localtime((time_t*)&epoch);
+			strftime(timestr, sizeof(timestr),
+				(tm->tm_year == cur_year)
+				? "%b %e %H:%M"
+				: "%b %e  %Y"
+				, tm);
+
+			fprintf(conn, "-r--r--r--    1  git    git %6lld %s %s\n",
+					size, timestr, name);
 		}
-		tm = localtime((time_t*)&epoch);
-		strftime(timestr, sizeof(timestr), 
-			(tm->tm_year == cur_year)
-			? "%b %e %H:%M"
-			: "%b %e  %Y"
-			, tm);
-
-		/* To retrieve tree for directory
-		 * git_tree_lookup(&tree, repo, git_tree_entry_id(tree_entry))
-		 */
-		fprintf(conn, "-r--r--r--    1  git    git %6lld %s %s\n",
-				size, timestr, name);
 	}
 	git_revwalk_free(w);
 }
