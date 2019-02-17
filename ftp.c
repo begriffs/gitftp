@@ -35,29 +35,30 @@ void cleanup_git(void)
 	git_libgit2_shutdown();
 }
 
-void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
+void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_time)
 {
 	const char *name;
 	git_tree_entry *entry;
 	git_blob *blob;
-	git_tree *past_tr, *sub_tr;
-	git_commit *commit;
-	git_revwalk *w;
+	git_tree *sub_tr;
 
 	git_filemode_t mode;
-	git_time_t epoch;
 	struct tm *tm;
 	char timestr[BUFSIZ];
 	git_off_t size;
-	git_oid commit_oid;
 	const git_oid *entry_oid;
 	size_t i;
 
 	time_t now = time(NULL);
 	int cur_year = localtime(&now)->tm_year;
-	
-	git_revwalk_new(&w, repo);
 
+	tm = localtime((time_t*)&commit_time);
+	strftime(timestr, sizeof(timestr),
+		(tm->tm_year == cur_year)
+		? "%b %e %H:%M"
+		: "%b %e  %Y"
+		, tm);
+	
 	for (i = 0; i < git_tree_entrycount(tr); ++i)
 	{
 		entry = (git_tree_entry *)git_tree_entry_byindex(tr, i);
@@ -71,35 +72,15 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 
 			fprintf(conn,
 					"drwxr-xr-x   %2zu  git    git      0 %s %s\n",
-					git_tree_entrycount(sub_tr), "Jan 01 08:08", name);
+					git_tree_entrycount(sub_tr), timestr, name);
 		} else {
 			git_blob_lookup(&blob, repo, entry_oid);
 			size = git_blob_rawsize(blob);
-
-			git_revwalk_reset(w);
-			git_revwalk_simplify_first_parent(w);
-			git_revwalk_push_head(w);
-			while (!git_revwalk_next(&commit_oid, w)) {
-				git_commit_lookup(&commit, repo, &commit_oid);
-				git_commit_tree(&past_tr, commit);
-
-				if (git_tree_entry_byid(past_tr, entry_oid) != NULL)
-					epoch = git_commit_time(commit);
-				else
-					break;
-			}
-			tm = localtime((time_t*)&epoch);
-			strftime(timestr, sizeof(timestr),
-				(tm->tm_year == cur_year)
-				? "%b %e %H:%M"
-				: "%b %e  %Y"
-				, tm);
 
 			fprintf(conn, "-r--r--r--    1  git    git %6lld %s %s\n",
 					size, timestr, name);
 		}
 	}
-	git_revwalk_free(w);
 }
 
 void pasv_format(const int *ip, int port, char *out)
@@ -121,8 +102,9 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
 
 	git_repository *repo;
-	git_object *obj;
 	git_tree *tr;
+	git_commit *ci;
+	git_time_t epoch;
 
 	if ((conn = sock_stream(sock, "a+")) == NULL)
 		exit(EXIT_FAILURE);
@@ -131,8 +113,9 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	atexit(cleanup_git);
 
 	git_or_die(conn, git_repository_open(&repo, gitpath) );
-	git_or_die(conn, git_revparse_single((git_object **)&obj, repo, "master^{tree}") );
-	tr = (git_tree *)obj;
+	git_or_die(conn, git_revparse_single((git_object **)&tr, repo, "master^{tree}") );
+	git_or_die(conn, git_revparse_single((git_object **)&ci, repo, "master^{commit}") );
+	epoch = git_commit_time(ci);
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
@@ -162,7 +145,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				continue;
 			}
 			fprintf(conn, "150 Opening ASCII mode data connection for file list\n");
-			ftp_ls(pasv_conn, repo, tr);
+			ftp_ls(pasv_conn, repo, tr, epoch);
 			fclose(pasv_conn);
 			pasvfd = -1;
 			fprintf(conn, "226 Transfer complete\n");
