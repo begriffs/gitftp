@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <git2/blob.h>
@@ -44,7 +45,9 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 	git_revwalk *w;
 
 	git_filemode_t mode;
-	git_time_t time;
+	git_time_t epoch;
+	struct tm *tm;
+	char timestr[BUFSIZ];
 	git_off_t size;
 	git_oid commit_oid;
 	const git_oid *entry_oid;
@@ -64,23 +67,27 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr)
 		size = git_blob_rawsize(blob);
 
 		git_revwalk_reset(w);
+		git_revwalk_push_head(w);
 		while (!git_revwalk_next(&commit_oid, w)) {
 			git_commit_lookup(&commit, repo, &commit_oid);
 			git_commit_tree(&past_tr, commit);
 
 			if (git_tree_entry_byid(past_tr, entry_oid) != NULL)
-				time = git_commit_time(commit);
+				epoch = git_commit_time(commit);
 			else
 				break;
 		}
+		tm = localtime((time_t*)&epoch);
+		strftime(timestr, sizeof(timestr), "%b %e %H:%M", tm);
 
 		/* To retrieve tree for directory
 		 * git_tree_lookup(&tree, repo, git_tree_entry_id(tree_entry))
 		 */
 
-		fprintf(conn, "-r--r--r--    1  git       git      %6lld Feb 29  2018 %s\n",
-				size, name);
+		fprintf(conn, "-r--r--r--    1  git       git      %6lld %s %s\n",
+				size, timestr, name);
 	}
+	git_revwalk_free(w);
 }
 
 void pasv_format(const int *ip, int port, char *out)
