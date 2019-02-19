@@ -16,6 +16,7 @@
 
 #include <sys/socket.h>
 
+#include "path.h"
 #include "socket.h"
 
 #define CLIENT_BUFSZ (10+PATH_MAX)
@@ -94,33 +95,57 @@ void pasv_format(const int *ip, int port, char *out)
 			p.rem, p.quot);
 }
 
+int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree **sub)
+{
+	int status;
+	git_tree_entry *entry;
+	const git_oid *entry_oid;
+
+	status = git_tree_entry_bypath(&entry, root, path);
+	if (status != 0)
+		return status;
+	entry_oid = git_tree_entry_id(entry);
+
+	if (git_tree_entry_type(entry) != GIT_OBJ_TREE)
+		return -1;
+
+	git_tree_lookup(sub, repo, entry_oid);
+
+	return 0;
+}
+
 void ftp_session(int sock, int *server_ip, const char *gitpath)
 {
 	char sha[8];
 	char cmd[CLIENT_BUFSZ];
+	struct path cur_path, new_path;
 
 	int pasvfd = -1, pasvport;
 	FILE *conn, *pasv_conn = NULL;
 	char pasv_desc[26]; /* format (%d,%d,%d,%d,%d,%d) */
 
 	git_repository *repo;
-	git_tree *tr;
 	git_commit *ci;
 	git_time_t epoch;
+	git_tree *root, *cur_dir, *new_dir;
 
 	if ((conn = sock_stream(sock, "a+")) == NULL)
 		exit(EXIT_FAILURE);
+
+	path_init(&cur_path);
 
 	git_or_die(conn, git_libgit2_init());
 	atexit(cleanup_git);
 
 	git_or_die(conn, git_repository_open(&repo, gitpath) );
-	git_or_die(conn, git_revparse_single((git_object **)&tr, repo, "master^{tree}") );
+	git_or_die(conn, git_revparse_single((git_object **)&root, repo, "master^{tree}") );
 	git_or_die(conn, git_revparse_single((git_object **)&ci, repo, "master^{commit}") );
 	epoch = git_commit_time(ci);
 
+	git_subtree(repo, root, cur_path.path, &cur_dir);
+
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
-	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)tr)));
+	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)ci)));
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
 		printf("<< %s", cmd);
@@ -129,7 +154,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 		else if (strncmp(cmd, "PASS", 4) == 0)
 			fprintf(conn, "230 Logged in\n");
 		else if (strncmp(cmd, "PWD", 3) == 0)
-			fprintf(conn, "257 \"/\"\n");
+			fprintf(conn, "257 \"%s\"\n", cur_path.path);
 		else if (strncmp(cmd, "CWD", 3) == 0)
 			fprintf(conn, "250 Smile and nod\n");
 		else if (strncmp(cmd, "LIST", 4) == 0)
@@ -147,7 +172,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				continue;
 			}
 			fprintf(conn, "150 Opening ASCII mode data connection for file list\n");
-			ftp_ls(pasv_conn, repo, tr, epoch);
+			ftp_ls(pasv_conn, repo, cur_dir, epoch);
 			fclose(pasv_conn);
 			pasvfd = -1;
 			fprintf(conn, "226 Transfer complete\n");
@@ -188,5 +213,5 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	fputs("Client disconnected\n", stderr);
 	if (pasv_conn != NULL)
 		fclose(pasv_conn);
-	git_tree_free(tr);
+	git_tree_free(root);
 }
