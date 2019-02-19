@@ -114,6 +114,16 @@ int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree
 	return 0;
 }
 
+void trim(char *s)
+{
+	char *bad = strchr(s, '\n');
+	if (bad)
+		*bad = '\0';
+	bad = strchr(s, '\r');
+	if (bad)
+		*bad = '\0';
+}
+
 void ftp_session(int sock, int *server_ip, const char *gitpath)
 {
 	char sha[8];
@@ -141,14 +151,14 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	git_or_die(conn, git_revparse_single((git_object **)&root, repo, "master^{tree}") );
 	git_or_die(conn, git_revparse_single((git_object **)&ci, repo, "master^{commit}") );
 	epoch = git_commit_time(ci);
-
-	git_subtree(repo, root, cur_path.path, &cur_dir);
+	cur_dir = root;
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)ci)));
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
-		printf("<< %s", cmd);
+		trim(cmd);
+		printf("<< %s\n", cmd);
 		if (strncmp(cmd, "USER", 4) == 0)
 			fprintf(conn, "331 Username OK, supply any pass\n");
 		else if (strncmp(cmd, "PASS", 4) == 0)
@@ -156,7 +166,27 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 		else if (strncmp(cmd, "PWD", 3) == 0)
 			fprintf(conn, "257 \"%s\"\n", cur_path.path);
 		else if (strncmp(cmd, "CWD", 3) == 0)
-			fprintf(conn, "250 Smile and nod\n");
+		{
+			path_cpy(&new_path, &cur_path);
+			path_relative(&new_path, cmd+4);
+
+			/* libgit2 can't handle the concept of root */
+			if (strcmp(new_path.path, "/") == 0)
+			{
+				path_init(&cur_path);
+				cur_dir = root;
+				fprintf(conn, "250 CWD command successful\n");
+			}
+			/* path+1 to strip the leading slash which freaks libgit2 out */
+			else if (git_subtree(repo, root, new_path.path+1, &new_dir) == 0)
+			{
+				path_cpy(&cur_path, &new_path);
+				cur_dir = new_dir;
+				fprintf(conn, "250 CWD command successful\n");
+			}
+			else
+				fprintf(conn, "550 %s: No such directory\n", new_path.path);
+		}
 		else if (strncmp(cmd, "LIST", 4) == 0)
 		{
 			if (pasvfd < 0)
