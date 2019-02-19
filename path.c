@@ -44,7 +44,7 @@ void path_init(struct path *p)
 	assert(*p->up == '/');
 }
 
-void path_dup(struct path *dst, struct path *src)
+void path_cpy(struct path *dst, struct path *src)
 {
 	strcpy(dst->path, src->path);
 	dst->up = dst->path + (src->up - src->path);

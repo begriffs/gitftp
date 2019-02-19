@@ -10,7 +10,7 @@ struct path
 };
 
 void path_init(struct path *p);
-void path_dup(struct path *dst, struct path *src);
+void path_cpy(struct path *dst, struct path *src);
 void path_cd(struct path *p, char *go);
 
 #endif
