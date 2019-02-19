@@ -208,7 +208,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 			fprintf(conn, "226 Transfer complete\n");
 		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
-			fprintf(conn, "215 git\n");
+			fprintf(conn, "215 UNIX\n");
 		else if (strncmp(cmd, "TYPE", 4) == 0)
 			fprintf(conn, "200 Sure whatever\n");
 		else if (strncmp(cmd, "QUIT", 4) == 0)
