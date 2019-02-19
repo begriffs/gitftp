@@ -6,19 +6,18 @@
 
 static void path_push(struct path *p, char *dir)
 {
-	//char *c, *guard, *new_up;
-	char *c;
+	char *c, *guard;
 	int terminal_slash = p->up[1] == '\0';
 
-	/* go to end */
-	for (c = p->up; *c; ++c)
-		;
-	if (!terminal_slash)
+	guard = p->path + PATH_MAX - 1;
+	for (c = p->up; c < guard && *c; ++c)
+		; /* go to end */
+	if (!terminal_slash && c < guard)
 	{
 		p->up = c;
 		*c++ = '/';
 	}
-	while (*dir)
+	while (c < guard && *dir)
 		if ((*c++ = *dir++) == '/')
 			p->up = c;
 	*c = '\0';
