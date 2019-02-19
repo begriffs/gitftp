@@ -52,7 +52,7 @@ void path_cpy(struct path *dst, struct path *src)
 	assert(*dst->up == '/');
 }
 
-void path_cd(struct path *p, char *go)
+void path_relative(struct path *p, char *go)
 {
 	char *q;
 
