@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <git2/blob.h>
+#include <git2/buffer.h>
 #include <git2/commit.h>
 #include <git2/errors.h>
 #include <git2/global.h>
@@ -86,6 +87,20 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 	}
 }
 
+int ftp_send(FILE *conn, git_blob *blob, const char *as)
+{
+	git_buf buf = GIT_BUF_INIT_CONST("", 0);
+	int status;
+
+	status = git_blob_filtered_content(&buf, blob, as, 0);
+	if (status < 0)
+		return status;
+
+	status = fwrite(buf.ptr, buf.size, 1, conn);
+	git_buf_free(&buf);
+	return (status < 1) ? -1 : 0;
+}
+
 void pasv_format(const int *ip, int port, char *out)
 {
 	div_t p = div(port, 256);
@@ -114,6 +129,19 @@ int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree
 	return 0;
 }
 
+int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_blob **blob)
+{
+	int status;
+	git_tree_entry *entry;
+	const git_oid *entry_oid;
+
+	status = git_tree_entry_bypath(&entry, root, path);
+	if (status != 0)
+		return status;
+	entry_oid = git_tree_entry_id(entry);
+	return git_blob_lookup(blob, repo, entry_oid);
+}
+
 void trim(char *s)
 {
 	char *bad = strchr(s, '\n');
@@ -138,6 +166,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	git_commit *ci;
 	git_time_t epoch;
 	git_tree *root, *cur_dir, *new_dir;
+	git_blob *blob;
 
 	if ((conn = sock_stream(sock, "a+")) == NULL)
 		exit(EXIT_FAILURE);
@@ -206,6 +235,28 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 			fclose(pasv_conn);
 			pasvfd = -1;
 			fprintf(conn, "226 Transfer complete\n");
+		}
+		else if (strncmp(cmd, "RETR", 4) == 0)
+		{
+			if (pasvfd < 0)
+			{
+				fprintf(conn, "425 Use PASV first\n");
+				continue;
+			}
+
+			path_cpy(&new_path, &cur_path);
+			path_relative(&new_path, cmd+5);
+
+			if (git_find_blob(repo, root, new_path.path+1, &blob) == 0)
+			{
+				fprintf(conn, "150 Opening ASCII mode data connection for file transfer\n");
+				if (ftp_send(pasv_conn, blob, new_path.path+1) < 0)
+					fprintf(conn, "426 Transfer error\n");
+				else
+					fprintf(conn, "226 Transfer complete\n");
+			}
+			else
+				fprintf(conn, "550 %s: No such file\n", new_path.path);
 		}
 		else if (strncmp(cmd, "SYST", 4) == 0)
 			fprintf(conn, "215 UNIX\n");
