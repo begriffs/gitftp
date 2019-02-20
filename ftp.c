@@ -243,6 +243,11 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				fprintf(conn, "425 Use PASV first\n");
 				continue;
 			}
+			if ((pasv_conn = sock_stream(accept(pasvfd, NULL, NULL), "w")) == NULL)
+			{
+				fprintf(conn, "452 Failed to accept() pasv sock\n");
+				continue;
+			}
 
 			path_cpy(&new_path, &cur_path);
 			path_relative(&new_path, cmd+5);
