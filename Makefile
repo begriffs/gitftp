@@ -1,4 +1,4 @@
-CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Wpedantic -Wshadow `pkg-config --cflags libgit2`
+CFLAGS = -std=c99 -DNDEBUG -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Wpedantic -Wshadow `pkg-config --cflags libgit2`
 
 OBJS = socket.o ftp.o path.o
 
@@ -9,9 +9,6 @@ LDFLAGS = `pkg-config --libs libgit2`
 
 gitftp : gitftp.c $(OBJS)
 	$(CC) $(CFLAGS) -o $@ gitftp.c $(LDFLAGS) $(OBJS)
-
-repl : repl.c path.o
-	$(CC) $(CFLAGS) -o $@ repl.c $(LDFLAGS) path.o
 
 socket.o : socket.c socket.h
 ftp.o : ftp.c ftp.h
