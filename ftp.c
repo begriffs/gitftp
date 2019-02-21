@@ -167,6 +167,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	git_time_t epoch;
 	git_tree *root, *cur_dir, *new_dir;
 	git_blob *blob;
+	git_off_t size;
 
 	if ((conn = sock_stream(sock, "a+")) == NULL)
 		exit(EXIT_FAILURE);
@@ -254,11 +255,16 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 
 			if (git_find_blob(repo, root, new_path.path+1, &blob) == 0)
 			{
-				fprintf(conn, "150 Opening ASCII mode data connection for file transfer\n");
+				size = git_blob_rawsize(blob);
+				fprintf(conn,
+				        "150 Opening ASCII mode data connection for %s (%lld bytes).\n",
+				        cmd+5, size);
 				if (ftp_send(pasv_conn, blob, new_path.path+1) < 0)
 					fprintf(conn, "426 Transfer error\n");
 				else
 					fprintf(conn, "226 Transfer complete\n");
+				fclose(pasv_conn);
+				pasvfd = -1;
 			}
 			else
 				fprintf(conn, "550 %s: No such file\n", new_path.path);
