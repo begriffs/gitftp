@@ -75,9 +75,11 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 			fprintf(conn,
 					"drwxr-xr-x   %2zu  git    git      0 %s %s\n",
 					git_tree_entrycount(sub_tr), timestr, name);
+			git_tree_free(sub_tr);
 		} else {
 			git_blob_lookup(&blob, repo, entry_oid);
 			size = git_blob_rawsize(blob);
+			git_blob_free(blob);
 
 			fprintf(conn, "%s    1  git    git %6lld %s %s\n",
 					(mode == GIT_FILEMODE_BLOB_EXECUTABLE)
@@ -122,9 +124,13 @@ int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree
 	entry_oid = git_tree_entry_id(entry);
 
 	if (git_tree_entry_type(entry) != GIT_OBJ_TREE)
+	{
+		git_tree_entry_free(entry);
 		return -1;
+	}
 
 	git_tree_lookup(sub, repo, entry_oid);
+	git_tree_entry_free(entry);
 
 	return 0;
 }
@@ -133,13 +139,17 @@ int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_bl
 {
 	int status;
 	git_tree_entry *entry;
-	const git_oid *entry_oid;
+	git_oid entry_oid;
 
 	status = git_tree_entry_bypath(&entry, root, path);
 	if (status != 0)
+	{
+		git_tree_entry_free(entry);
 		return status;
-	entry_oid = git_tree_entry_id(entry);
-	return git_blob_lookup(blob, repo, entry_oid);
+	}
+	git_oid_cpy(&entry_oid, git_tree_entry_id(entry));
+	git_tree_entry_free(entry);
+	return git_blob_lookup(blob, repo, &entry_oid);
 }
 
 void trim(char *s)
@@ -185,6 +195,9 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 
 	fprintf(conn, "220 Browsing at SHA (%s)\n",
 	        git_oid_tostr(sha, sizeof sha, git_object_id((git_object*)ci)));
+
+	git_commit_free(ci);
+
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
 		trim(cmd);
@@ -204,6 +217,8 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 			if (strcmp(new_path.path, "/") == 0)
 			{
 				path_init(&cur_path);
+				if (cur_dir != root)
+					git_tree_free(cur_dir);
 				cur_dir = root;
 				fprintf(conn, "250 CWD command successful\n");
 			}
@@ -211,6 +226,8 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 			else if (git_subtree(repo, root, new_path.path+1, &new_dir) == 0)
 			{
 				path_cpy(&cur_path, &new_path);
+				if (cur_dir != root)
+					git_tree_free(cur_dir);
 				cur_dir = new_dir;
 				fprintf(conn, "250 CWD command successful\n");
 			}
@@ -263,6 +280,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 					fprintf(conn, "426 Transfer error\n");
 				else
 					fprintf(conn, "226 Transfer complete\n");
+				git_blob_free(blob);
 				fclose(pasv_conn);
 				pasvfd = -1;
 			}
@@ -306,4 +324,5 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	if (pasv_conn != NULL)
 		fclose(pasv_conn);
 	git_tree_free(root);
+	git_repository_free(repo);
 }
