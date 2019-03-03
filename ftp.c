@@ -84,7 +84,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 			fprintf(conn, "%s    1  git    git %6lld %s %s\n",
 					(mode == GIT_FILEMODE_BLOB_EXECUTABLE)
 					? "-rwxr-xr-x" : "-rw-r--r--",
-					size, timestr, name);
+					(long long int)size, timestr, name);
 		}
 	}
 }
@@ -275,7 +275,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				size = git_blob_rawsize(blob);
 				fprintf(conn,
 				        "150 Opening ASCII mode data connection for %s (%lld bytes).\n",
-				        cmd+5, size);
+				        cmd+5, (long long int)size);
 				if (ftp_send(pasv_conn, blob, new_path.path+1) < 0)
 					fprintf(conn, "426 Transfer error\n");
 				else
