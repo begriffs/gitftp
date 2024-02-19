@@ -4,16 +4,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <git2/blob.h>
-#include <git2/buffer.h>
-#include <git2/commit.h>
-#include <git2/errors.h>
-#include <git2/global.h>
-#include <git2/oid.h>
-#include <git2/repository.h>
-#include <git2/revparse.h>
-#include <git2/revwalk.h>
-#include <git2/tree.h>
+#include <git2.h>
 
 #include <sys/socket.h>
 
@@ -26,7 +17,7 @@ void git_or_die(FILE *conn, int code)
 {
 	if (code < 0)
 	{
-		fprintf(conn, "451 libgit2 error: %s\n", giterr_last()->message);
+		fprintf(conn, "451 libgit2 error: %s\n", git_error_last()->message);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -69,7 +60,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 		name = git_tree_entry_name(entry);
 		mode = git_tree_entry_filemode(entry);
 
-		if (git_tree_entry_type(entry) == GIT_OBJ_TREE) {
+		if (git_tree_entry_type(entry) == GIT_OBJECT_TREE) {
 			git_tree_lookup(&sub_tr, repo, entry_oid);
 
 			fprintf(conn,
@@ -91,15 +82,16 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 
 int ftp_send(FILE *conn, git_blob *blob, const char *as)
 {
-	git_buf buf = GIT_BUF_INIT_CONST("", 0);
+	static git_blob_filter_options opt = GIT_BLOB_FILTER_OPTIONS_INIT;
+	git_buf buf = GIT_BUF_INIT;
 	int status;
 
-	status = git_blob_filtered_content(&buf, blob, as, 0);
+	status = git_blob_filter(&buf, blob, as, &opt);
 	if (status < 0)
 		return status;
 
 	status = fwrite(buf.ptr, buf.size, 1, conn);
-	git_buf_free(&buf);
+	git_buf_dispose(&buf);
 	return (status < 1) ? -1 : 0;
 }
 
@@ -123,7 +115,7 @@ int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree
 		return status;
 	entry_oid = git_tree_entry_id(entry);
 
-	if (git_tree_entry_type(entry) != GIT_OBJ_TREE)
+	if (git_tree_entry_type(entry) != GIT_OBJECT_TREE)
 	{
 		git_tree_entry_free(entry);
 		return -1;

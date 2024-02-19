@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#include <git2/tree.h>
+#include <git2.h>
 
 void git_or_die(FILE *conn, int code);
 void ftp_ls(FILE *conn, git_tree *tr);

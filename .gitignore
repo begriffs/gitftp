@@ -1,2 +1,4 @@
 gitftp
 *.o
+config.mk
+tags
