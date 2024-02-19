@@ -64,7 +64,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 			git_tree_lookup(&sub_tr, repo, entry_oid);
 
 			fprintf(conn,
-					"drwxr-xr-x   %2zu  git    git      0 %s %s\n",
+					"drwxr-xr-x   %2zu  git    git      0 %s %s\r\n",
 					git_tree_entrycount(sub_tr), timestr, name);
 			git_tree_free(sub_tr);
 		} else {
@@ -72,7 +72,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 			size = git_blob_rawsize(blob);
 			git_blob_free(blob);
 
-			fprintf(conn, "%s    1  git    git %6lld %s %s\n",
+			fprintf(conn, "%s    1  git    git %6lld %s %s\r\n",
 					(mode == GIT_FILEMODE_BLOB_EXECUTABLE)
 					? "-rwxr-xr-x" : "-rw-r--r--",
 					(long long int)size, timestr, name);
