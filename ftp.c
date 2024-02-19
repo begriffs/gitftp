@@ -144,14 +144,9 @@ int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_bl
 	return git_blob_lookup(blob, repo, &entry_oid);
 }
 
-void trim(char *s)
+void chomp(char *s)
 {
-	char *bad = strchr(s, '\n');
-	if (bad)
-		*bad = '\0';
-	bad = strchr(s, '\r');
-	if (bad)
-		*bad = '\0';
+	s[strcspn(s, "\n\r")] = '\0';
 }
 
 void ftp_session(int sock, int *server_ip, const char *gitpath)
@@ -192,7 +187,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 
 	while (fgets(cmd, CLIENT_BUFSZ, conn) != NULL)
 	{
-		trim(cmd);
+		chomp(cmd);
 		printf("<< %s\n", cmd);
 		if (strncmp(cmd, "USER", 4) == 0)
 			fprintf(conn, "331 Username OK, supply any pass\n");
