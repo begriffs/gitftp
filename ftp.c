@@ -95,11 +95,11 @@ int ftp_send(FILE *conn, git_blob *blob, const char *as)
 	return (status < 1) ? -1 : 0;
 }
 
-void pasv_format(const int *ip, int port, char *out)
+void pasv_format(const int *ip, int port, char *out, size_t outlen)
 {
 	div_t p = div(port, 256);
 
-	sprintf(out, "(%d,%d,%d,%d,%d,%d)",
+	snprintf(out, outlen, "(%d,%d,%d,%d,%d,%d)",
 			ip[0], ip[1], ip[2], ip[3],
 			p.rem, p.quot);
 }
@@ -304,7 +304,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 				fprintf(conn, "452 Passive socket incorrect\n");
 				continue;
 			}
-			pasv_format(server_ip, pasvport, pasv_desc);
+			pasv_format(server_ip, pasvport, pasv_desc, sizeof pasv_desc);
 			printf("Opening passive socket on %s\n", pasv_desc);
 
 			fprintf(conn, "227 Entering Passive Mode %s\n", pasv_desc);
