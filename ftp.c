@@ -175,8 +175,11 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 	atexit(cleanup_git);
 
 	git_or_die(conn, git_repository_open(&repo, gitpath) );
-	git_or_die(conn, git_revparse_single((git_object **)&root, repo, "master^{tree}") );
-	git_or_die(conn, git_revparse_single((git_object **)&ci, repo, "master^{commit}") );
+	// try main branch, and fall back to master
+	if (git_revparse_single((git_object **)&root, repo, "main^{tree}") != 0)
+		git_or_die(conn, git_revparse_single((git_object **)&root, repo, "master^{tree}") );
+	if (git_revparse_single((git_object **)&ci, repo, "main^{commit}") != 0)
+		git_or_die(conn, git_revparse_single((git_object **)&ci, repo, "master^{commit}") );
 	epoch = git_commit_time(ci);
 	cur_dir = root;
 
