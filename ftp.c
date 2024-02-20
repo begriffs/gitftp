@@ -23,7 +23,7 @@ void git_or_die(FILE *conn, int code)
 }
 
 /* wrapper to match expected atexit type */
-void cleanup_git(void)
+static void cleanup_git(void)
 {
 	git_libgit2_shutdown();
 }
@@ -80,7 +80,7 @@ void ftp_ls(FILE *conn, git_repository *repo, git_tree *tr, git_time_t commit_ti
 	}
 }
 
-int ftp_send(FILE *conn, git_blob *blob, const char *as)
+static int ftp_send(FILE *conn, git_blob *blob, const char *as)
 {
 	static git_blob_filter_options opt = GIT_BLOB_FILTER_OPTIONS_INIT;
 	git_buf buf = GIT_BUF_INIT;
@@ -95,7 +95,7 @@ int ftp_send(FILE *conn, git_blob *blob, const char *as)
 	return (status < 1) ? -1 : 0;
 }
 
-void pasv_format(const int *ip, int port, char *out, size_t outlen)
+static void pasv_format(const int *ip, int port, char *out, size_t outlen)
 {
 	div_t p = div(port, 256);
 
@@ -104,7 +104,7 @@ void pasv_format(const int *ip, int port, char *out, size_t outlen)
 			p.rem, p.quot);
 }
 
-int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree **sub)
+static int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree **sub)
 {
 	int status;
 	git_tree_entry *entry;
@@ -127,7 +127,7 @@ int git_subtree(git_repository *repo, git_tree *root, const char *path, git_tree
 	return 0;
 }
 
-int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_blob **blob)
+static int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_blob **blob)
 {
 	int status;
 	git_tree_entry *entry;
@@ -144,7 +144,7 @@ int git_find_blob(git_repository *repo, git_tree *root, const char *path, git_bl
 	return git_blob_lookup(blob, repo, &entry_oid);
 }
 
-void chomp(char *s)
+static void chomp(char *s)
 {
 	s[strcspn(s, "\n\r")] = '\0';
 }
