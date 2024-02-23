@@ -1,0 +1,7 @@
+pkg-config --print-errors 'libgit2 >= 1.0 libgit2 < 2'
+
+cat > config.mk <<-EOF
+	CFLAGS += $(pkg-config --cflags libgit2)
+	LDFLAGS += $(pkg-config --libs-only-L libgit2)
+	LDLIBS += $(pkg-config --libs-only-l libgit2)
+EOF
