@@ -241,6 +241,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 			fprintf(conn, "150 Opening ASCII mode data connection for file list\n");
 			ftp_ls(pasv_conn, repo, cur_dir, epoch);
 			fclose(pasv_conn);
+			pasv_conn = NULL;
 			pasvfd = -1;
 			fprintf(conn, "226 Transfer complete\n");
 		}
@@ -272,6 +273,7 @@ void ftp_session(int sock, int *server_ip, const char *gitpath)
 					fprintf(conn, "226 Transfer complete\n");
 				git_blob_free(blob);
 				fclose(pasv_conn);
+				pasv_conn = NULL;
 				pasvfd = -1;
 			}
 			else
